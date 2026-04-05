@@ -65,8 +65,6 @@ familias_cadunico <- familias_cadunico %>%
 
 
 
-
-
 ## Leitura de familias por condição com read_csv
 familias_cond_pbf <- read_csv(
   "familias_por_condicao_pbf_2025.csv",
@@ -408,7 +406,7 @@ base_lab <- base_lab %>%
     by = "cod_mun"
   )
 
-glimpse(base_municipios)
+glimpse(base_lab)
 
 
 base_lab <- base_lab %>%
@@ -437,7 +435,7 @@ base_lab <- base_lab %>%
     by = "cod_mun"
   )
 
-glimpse(base_municipios)
+glimpse(base_lab)
 
 
 ##########################################################
@@ -461,7 +459,7 @@ library(dplyr)
 library(knitr)
 library(kableExtra)
 
-tabela_alfab_latex <- base_lab %>%
+tabela_alfab <- base_lab %>%
   mutate(
     classe_alfab = ntile(tx_alfab, 4),
     classe_alfab = recode(
@@ -477,23 +475,37 @@ tabela_alfab_latex <- base_lab %>%
   transmute(
     Posição = posicao,
     Município = nome_mun,
-    `Taxa de alfabetização` = round(tx_alfab, 2),
+    `Taxa de alfabetização` = format(
+      round(tx_alfab, 2),
+      nsmall = 2,
+      decimal.mark = ",",
+      big.mark = "."
+    ),
     Classificação = classe_alfab
   )
 
 tab_alfab_latex <- knitr::kable(
-  tabela_alfab_latex,
+  tabela_alfab,
   format = "latex",
   booktabs = TRUE,
   longtable = TRUE,
   escape = TRUE,
+  col.names = c(
+    "Posição",
+    "Município",
+    "Taxa de alfabetização",
+    "Classificação"
+  ),
   align = c("c", "l", "c", "l"),
   caption = "Municípios sergipanos segundo a taxa de alfabetização e a classificação em quartos.",
   label = "alfab_sergipe"
-)
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("repeat_header", "hold_position"),
+    font_size = 9
+  )
 
-cat(tab_alfab_latex, file = "../lab-latex/tabela_alfabetizacao.tex") ## gravando na pasta onde está o doc latex
-
+cat(tab_alfab_latex, file = "../lab-latex/tabela_alfabetizacao.tex")
 
 library(dplyr)
 library(ggplot2)
@@ -649,20 +661,28 @@ ggsave(
 )
 
 
-# Item 4.3
+# Item 3.4
 
 grafico_boxplot_pbf <- ggplot(
   base_lab,
-  aes(x = classe_prop_benef_pbf, y = valor_medio_benef)
+  aes(x = classe_prop_benef_pbf, y = valor_medio_benef, fill = classe_prop_benef_pbf)
 ) +
   geom_boxplot() +
+  scale_fill_manual(values = c(
+    "Baixa participação" = "#66c2a5",
+    "Média baixa" = "#fc8d62",
+    "Média alta" = "#8da0cb",
+    "Alta participação" = "#e78ac3"
+  )) +
   labs(
     title = "Valor médio do Bolsa Família por classes de participação",
     x = "Classes de participação",
     y = "Valor médio do benefício"
   ) +
-  theme_minimal()
-
+  theme_minimal() +
+  theme(
+    legend.position = "none"
+  )
 
 grafico_boxplot_pbf
 
@@ -673,7 +693,54 @@ ggsave(
   height = 6
 )
 
+# Encontrando os outliers
+limites_outlier <- base_lab %>%
+  group_by(classe_prop_benef_pbf) %>%
+  summarise(
+    q1 = quantile(valor_medio_benef, 0.25, na.rm = TRUE),
+    q3 = quantile(valor_medio_benef, 0.75, na.rm = TRUE),
+    iqr = IQR(valor_medio_benef, na.rm = TRUE),
+    limite_inf = q1 - 1.5 * iqr,
+    limite_sup = q3 + 1.5 * iqr
+  )
+
+outliers_pbf <- base_lab %>%
+  left_join(limites_outlier, by = "classe_prop_benef_pbf") %>%
+  filter(valor_medio_benef < limite_inf | valor_medio_benef > limite_sup) %>%
+  select(nome_mun, classe_prop_benef_pbf, valor_medio_benef)
 
 
+tabela_outliers_pbf <- outliers_pbf %>%
+  transmute(
+    Município = nome_mun,
+    `Tipo de participação` = classe_prop_benef_pbf,
+    `Valor médio do benefício (R$)` = format(
+      round(valor_medio_benef, 2),
+      nsmall = 2,
+      decimal.mark = ",",
+      big.mark = "."
+    )
+  )
 
+tab_outliers_pbf_latex <- knitr::kable(
+  tabela_outliers_pbf,
+  format = "latex",
+  booktabs = TRUE,
+  longtable = TRUE,
+  escape = TRUE,
+  col.names = c(
+    "Município",
+    "Tipo de participação",
+    "Valor médio do benefício (R\$)"
+  ),
+  align = c("l", "l", "r"),
+  caption = "Municípios com valores atípicos do benefício médio do Programa Bolsa Família, segundo classes de participação.",
+  label = "outliers_pbf"
+) %>%
+  kableExtra::kable_styling(
+    latex_options = c("repeat_header", "hold_position"),
+    font_size = 9
+  )
+
+cat(tab_outliers_pbf_latex, file = "../lab-latex/tabela_outliers_pbf.tex")
 
